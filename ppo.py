@@ -4,11 +4,13 @@ from torch.distributions import Normal, Uniform
 import torch as t
 import torch.nn as nn
 import gym
+import matplotlib.pyplot as plt
+import time
 
 # configurations
 env = gym.make("MountainCarContinuous-v0")
 observe_dim = 2
-max_episodes = 1000
+max_episodes = 400
 max_steps = 999
 solved_repeat = 3
 
@@ -58,12 +60,11 @@ def train():
         actor, critic,
         t.optim.Adam, nn.MSELoss(reduction="sum"),
         actor_update_times=5, critic_update_times=10,
-        actor_learning_rate=1e-4, critic_learning_rate=1e-4,
-        discount=0.95)
+        actor_learning_rate=1e-3, critic_learning_rate=1e-3,
+        discount=0.99)
 
-    episode, step = 0, 0
+    episode, step, wins = 0, 0, 0
     smoothed_total_reward = 0
-    found = False
     Scores = []
     Dist = []
 
@@ -85,7 +86,7 @@ def train():
                 old_state = state
                 # agent model inference
                 if step % changeRate == 1:
-                    if episode > 10:
+                    if episode > 30:
                         action = ppo.act({"state": old_state})[0]
                     else:
                         action = unif.sample()
@@ -108,23 +109,31 @@ def train():
         # update
         ppo.store_episode(tmp_observations)
         if total_reward > 0:
-            found = True
+            wins += 1
             logger.info("On Flag")
-        if found:
-            pass
-        elif episode > 20:
-            return episode
-        ppo.update()
 
         # show reward
         smoothed_total_reward *= 0.9
         smoothed_total_reward += total_reward * 0.1
-        Info = f"Ep {episode} >={maxDist:.2f} $={smoothed_total_reward:.2f}"
+        winrate = wins / max(episode, 1)
+        Info = (f"Ep {episode} >={maxDist:.2f} "
+                f"$={smoothed_total_reward:.2f} "
+                f"% {winrate:.2f}")
         logger.info(Info)
-        Scores.append(total_reward)
+        Scores.append(smoothed_total_reward)
         Dist.append(maxDist)
+    return Scores
 
 
 if __name__ == "__main__":
-    while train() < 30:
-        pass
+    plt.figure(1)
+    durations = []
+    for _ in range(5):
+        a = time.time()
+        x = train()
+        durations.append(time.time() - a)
+        plt.plot(x)
+    plt.savefig("scores.png")
+    plt.figure(2)
+    plt.boxplot(durations)
+    plt.savefig("times.png")
