@@ -27,7 +27,8 @@ class Actor(nn.Module):
         a = t.relu(self.fc2(a))
         probs = t.sigmoid(self.fc3(a))
         mu = probs[0][0] * 2 - 1
-        dist = Normal(mu, probs[0][1])
+        sig = probs[0][1]
+        dist = Normal(mu, sig)
         act = action if action is not None else dist.sample()
         act_entropy = dist.entropy()
         act_log_prob = dist.log_prob(act.flatten())
@@ -56,7 +57,9 @@ def train():
     ppo = PPO(
         actor, critic,
         t.optim.Adam, nn.MSELoss(reduction="sum"),
-        actor_update_times=50, critic_update_times=100)
+        actor_update_times=5, critic_update_times=10,
+        actor_learning_rate=1e-4, critic_learning_rate=1e-4,
+        discount=0.95)
 
     episode, step = 0, 0
     smoothed_total_reward = 0
@@ -82,13 +85,13 @@ def train():
                 old_state = state
                 # agent model inference
                 if step % changeRate == 1:
-                    if found:
+                    if episode > 10:
                         action = ppo.act({"state": old_state})[0]
                     else:
                         action = unif.sample()
                 state, reward, terminal, _ = env.step([action])
                 state = t.tensor(state, dtype=t.float32).view(1, observe_dim)
-                reward = max(0, reward)
+                # reward = max(reward * 0.05, reward)
                 total_reward += reward
                 maxDist = max(maxDist, state[0][0])
 
@@ -106,7 +109,7 @@ def train():
         ppo.store_episode(tmp_observations)
         if total_reward > 0:
             found = True
-            logger.info("LETS GO")
+            logger.info("On Flag")
         if found:
             pass
         elif episode > 20:
@@ -116,7 +119,7 @@ def train():
         # show reward
         smoothed_total_reward *= 0.9
         smoothed_total_reward += total_reward * 0.1
-        Info = f"Ep {episode} >={maxDist:.2f} $={total_reward:.2f}"
+        Info = f"Ep {episode} >={maxDist:.2f} $={smoothed_total_reward:.2f}"
         logger.info(Info)
         Scores.append(total_reward)
         Dist.append(maxDist)
